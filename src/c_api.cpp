@@ -4,54 +4,7 @@
 #include "caffe/blob.hpp"
 #include "caffe/net.hpp"
 #include "caffe/profiler.hpp"
-
-// ThreadLocal Template
-
-#ifdef __GNUC__
-#define THREAD_LOCAL __thread
-#elif __STDC_VERSION__ >= 201112L
-#define THREAD_LOCAL _Thread_local
-#elif defined(_MSC_VER)
-#define THREAD_LOCAL __declspec(thread)
-#endif
-
-#ifndef THREAD_LOCAL
-#message("Warning: Threadlocal is not enabled");
-#endif
-
-template<typename T>
-class ThreadLocalStore {
-public:
-  static T *Get() {
-    static THREAD_LOCAL T *ptr = nullptr;
-    if (ptr == nullptr) {
-      ptr = new T();
-      Singleton()->RegisterDelete(ptr);
-    }
-    return ptr;
-  }
-
-private:
-  ThreadLocalStore() {}
-  ~ThreadLocalStore() {
-    for (auto obj : objs_) {
-      delete obj;
-    }
-  }
-  static ThreadLocalStore<T> *Singleton() {
-    static ThreadLocalStore<T> inst;
-    return &inst;
-  }
-  void RegisterDelete(T *obj) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    objs_.push_back(obj);
-    lock.unlock();
-  }
-
-private:
-  std::mutex mutex_;
-  std::vector<T*> objs_;
-};
+#include "./thread_local.hpp"
 
 #define API_BEGIN() try {
 #define API_END() } catch(caffe::Error &_except_) { return CaffeAPIHandleException(_except_); } return 0;
@@ -114,6 +67,12 @@ int CaffeNetCreateFromBuffer(const char *net_buffer, int nb_len,
 int CaffeNetDestroy(NetHandle net) {
   API_BEGIN();
   delete static_cast<caffe::Net*>(net);
+  API_END();
+}
+
+int CaffeNetMarkOutput(NetHandle net, const char *name) {
+  API_BEGIN();
+  static_cast<caffe::Net*>(net)->MarkOutputs({name});
   API_END();
 }
 
@@ -246,4 +205,10 @@ const char *CaffeGetLastError() {
 int CaffeAPIHandleException(caffe::Error &e) {
   CaffeAPISetLastError(e.what());
   return -1;
+}
+
+int CaffeMemoryPoolClear() {
+  API_BEGIN();
+  caffe::MemPoolClear();
+  API_END();
 }
